@@ -115,6 +115,37 @@ def add_response(application_id, channel, response_type):
     conn.commit()
     conn.close()
 
+def add_customization(
+    application_id,
+    resume_customized=False,
+    cover_letter_customized=False,
+):
+    """
+    Logs whether resume and/or cover letter
+    were customized for this application.
+    Behavioral signal only (binary).
+    """
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT OR REPLACE INTO application_customization
+        (application_id, resume_customized, cover_letter_customized, timestamp)
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            application_id,
+            int(resume_customized),
+            int(cover_letter_customized),
+            _utcnow().isoformat(),
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
 # ==================================================
 # Pillar B — Canonical Metrics & Time Awareness
 # ==================================================
@@ -236,6 +267,36 @@ def status_change_count(application_id):
     conn.close()
     return count
 
+def customization_flags(application_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT resume_customized, cover_letter_customized
+        FROM application_customization
+        WHERE application_id = ?
+        """,
+        (application_id,),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row is None:
+        return {
+            "resume_customized": False,
+            "cover_letter_customized": False,
+            "any_customization": False,
+        }
+
+    resume, cover_letter = row
+
+    return {
+        "resume_customized": bool(resume),
+        "cover_letter_customized": bool(cover_letter),
+        "any_customization": bool(resume or cover_letter),
+    }
 
 # ----------------------
 # B.3 — Derived Application Flags
@@ -305,6 +366,8 @@ def application_metrics_view():
     rows = []
 
     for app_id in application_ids:
+        customization = customization_flags(app_id)
+
         days_idle = days_since_last_action(app_id)
         outreach_total = total_outreach_count(app_id)
         follow_ups = follow_up_count(app_id)
@@ -324,10 +387,12 @@ def application_metrics_view():
             "is_idle_application": (
                 days_idle is not None and days_idle > IDLE_DAYS_THRESHOLD
             ),
+            "resume_customized": customization["resume_customized"],
+            "cover_letter_customized": customization["cover_letter_customized"],
+            "any_customization": customization["any_customization"],
         })
 
     return rows
-
 
 # ----------------------
 # B.6 — Channel Metrics View (Canonical)
