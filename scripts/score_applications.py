@@ -48,20 +48,40 @@ def _parse_ts(ts):
 # Pillar A — Core Write Functions
 # ==================================================
 
-def add_application(company, role, application_link=None):
+def add_application(
+    company,
+    role,
+    application_link=None,
+    submitted_at=None,
+):
     """
     Creates a new application record.
-    Returns the generated application_id.
+    submitted_at:
+      - ISO string (YYYY-MM-DD or full timestamp)
+      - None → defaults to current UTC time
     """
     conn = get_connection()
     cursor = conn.cursor()
 
+    if submitted_at is None:
+        submitted_at = _utcnow().isoformat()
+
     cursor.execute(
         """
-        INSERT INTO applications (company, role, application_link)
-        VALUES (?, ?, ?)
+        INSERT INTO applications (
+            company,
+            role,
+            application_link,
+            created_at
+        )
+        VALUES (?, ?, ?, ?)
         """,
-        (company, role, application_link),
+        (
+            company,
+            role,
+            application_link,
+            submitted_at,
+        ),
     )
 
     conn.commit()
@@ -69,7 +89,6 @@ def add_application(company, role, application_link=None):
     conn.close()
 
     return application_id
-
 
 def add_outreach(application_id, channel, outreach_type="initial"):
     """
@@ -176,13 +195,27 @@ def _latest_timestamp(application_id):
     cursor.execute(
         """
         SELECT MAX(ts) FROM (
-            SELECT created_at AS ts FROM applications WHERE application_id = ?
+            SELECT created_at AS ts
+            FROM applications
+            WHERE application_id = ?
+
             UNION ALL
-            SELECT timestamp AS ts FROM outreach_events WHERE application_id = ?
+
+            SELECT created_at AS ts
+            FROM outreach_events
+            WHERE application_id = ?
+
             UNION ALL
-            SELECT timestamp AS ts FROM response_events WHERE application_id = ?
+
+            SELECT timestamp AS ts
+            FROM response_events
+            WHERE application_id = ?
+
             UNION ALL
-            SELECT timestamp AS ts FROM status_history WHERE application_id = ?
+
+            SELECT created_at AS ts
+            FROM status_history
+            WHERE application_id = ?
         )
         """,
         (application_id, application_id, application_id, application_id),
@@ -201,7 +234,6 @@ def days_since_last_action(application_id):
 
     last = datetime.fromisoformat(ts).replace(tzinfo=timezone.utc)
     return (datetime.now(timezone.utc) - last).days
-
 
 # ----------------------
 # B.2 — Application-Level Counts
@@ -339,7 +371,7 @@ def current_status(application_id):
         SELECT status
         FROM status_history
         WHERE application_id = ?
-        ORDER BY timestamp DESC
+        ORDER BY created_at DESC
         LIMIT 1
         """,
         (application_id,),
@@ -349,7 +381,6 @@ def current_status(application_id):
     conn.close()
 
     return row[0] if row else "open"
-
 
 # ----------------------
 # B.5 — Application Metrics View (Canonical)
@@ -476,13 +507,15 @@ def portfolio_metrics_view():
     min_ts, max_ts = cursor.fetchone()
     conn.close()
 
+    applications_per_week = None
+
     if min_ts and max_ts:
-        start = datetime.fromisoformat(min_ts)
-        end = datetime.fromisoformat(max_ts)
-        weeks_active = max(1, ((end - start).days + 6) // 7)
-        applications_per_week = applications_total / weeks_active
-    else:
-        applications_per_week = None
+        start = _parse_ts(min_ts)
+        end = _parse_ts(max_ts)
+
+        if start and end:
+            weeks_active = max(1, ((end - start).days + 6) // 7)
+            applications_per_week = applications_total / weeks_active
 
     return {
         "applications_total": applications_total,
@@ -493,7 +526,6 @@ def portfolio_metrics_view():
         "high_idle_portfolio": high_idle_portfolio,
         "low_follow_up_portfolio": low_follow_up_portfolio,
     }
-
 
 # ==================================================
 # Pillar C.1 — Application State

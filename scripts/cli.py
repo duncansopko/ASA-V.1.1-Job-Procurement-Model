@@ -11,7 +11,7 @@ print("CLI FILE EXECUTING")
 
 
 # --------------------
-# add application
+# add
 # --------------------
 def add_application_cmd(args):
     application_id = add_application(
@@ -40,9 +40,7 @@ def outreach_cmd(args):
         outreach_type=args.type,
     )
 
-    print(
-        f"Outreach logged for application {args.application_id} via {args.channel}."
-    )
+    print(f"Outreach logged for application {args.application_id} via {args.channel}.")
 
 
 # --------------------
@@ -55,25 +53,34 @@ def status_cmd(args):
         print(f"No application found with ID {args.application_id}")
         return
 
-    m = snapshot["metrics"]
+    base = snapshot["base"]
+    metrics = snapshot["metrics"]
 
     print(f"\nApplication {args.application_id}")
-    print(f"Company: {m['company']}")
-    print(f"Role: {m['role']}\n")
+    print(f"Company: {base['company']}")
+    print(f"Role: {base['role']}")
 
-    print(f"State: {snapshot['state']}")
-    print(f"Outreach: {m['total_outreach_count']}")
-    print(f"Follow-ups: {m['follow_up_count']}")
+    submitted = base.get("submitted_at")
+    if submitted:
+        print(f"Submitted at: {submitted}")
+
+    print(f"\nState: {snapshot['state']}")
+    print(f"Outreach: {metrics['total_outreach_count']}")
+    print(f"Follow-ups: {metrics['follow_up_count']}")
+
     print(
-        f"Customization: resume {'✓' if m['resume_customized'] else '✗'} | "
-        f"cover letter {'✓' if m['cover_letter_customized'] else '✗'}\n"
+        f"Customization: resume {'✓' if metrics['resume_customized'] else '✗'} | "
+        f"cover letter {'✓' if metrics['cover_letter_customized'] else '✗'}"
     )
 
-    print("Insights:")
+    print("\nInsights:")
     for line in snapshot["narratives"]:
         print(f"- {line}")
 
 
+# ====================
+# MAIN (TOP LEVEL)
+# ====================
 def main():
     parser = argparse.ArgumentParser(
         description="ASA v1.1 — Job Application CLI"
@@ -81,8 +88,7 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # add
-    add_parser = subparsers.add_parser("add", help="Add a new application")
+    add_parser = subparsers.add_parser("add")
     add_parser.add_argument("--company", required=True)
     add_parser.add_argument("--role", required=True)
     add_parser.add_argument("--link")
@@ -90,34 +96,25 @@ def main():
     add_parser.add_argument("--cover-letter-customized", action="store_true")
     add_parser.set_defaults(func=add_application_cmd)
 
-    # outreach
-    outreach_parser = subparsers.add_parser(
-        "outreach", help="Log outreach activity"
-    )
-    outreach_parser.add_argument(
-        "--application-id", type=int, required=True
-    )
+    outreach_parser = subparsers.add_parser("outreach")
+    outreach_parser.add_argument("--application-id", type=int, required=True)
     outreach_parser.add_argument("--channel", required=True)
     outreach_parser.add_argument(
-        "--type",
-        choices=["initial", "follow_up"],
-        default="initial",
+        "--type", choices=["initial", "follow_up"], default="initial"
     )
     outreach_parser.set_defaults(func=outreach_cmd)
 
-    # status
-    status_parser = subparsers.add_parser(
-        "status", help="View application status and insights"
-    )
-    status_parser.add_argument(
-        "--application-id", type=int, required=True
-    )
+    status_parser = subparsers.add_parser("status")
+    status_parser.add_argument("--application-id", type=int, required=True)
     status_parser.set_defaults(func=status_cmd)
 
     args = parser.parse_args()
     args.func(args)
 
 
+# ====================
+# ENTRYPOINT
+# ====================
 if __name__ == "__main__":
     main()
 
